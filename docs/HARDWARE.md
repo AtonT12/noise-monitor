@@ -48,6 +48,8 @@ The code uses ESP32-S3 GPIO numbers. Check the pin map for the exact board revis
 
 The firmware reads the left sample from each stereo I2S frame. If the microphone L/R pin is strapped differently, update the slot selection and sample extraction together.
 
+The INMP441 tri-states its SD output whenever the frame is not in its selected slot. Because the RX channel is configured for both slots, the data line is undriven for half of every frame and the firmware simply ignores the values it reads there. A 100 kΩ resistor from DIN to GND is optional but removes the floating input; it is too weak to load the microphone's push-pull output.
+
 ## 3a. Battery voltage sense
 
 The XIAO ESP32-S3 has no battery-sense output, so the pack voltage is measured
@@ -131,3 +133,5 @@ Separate the microphone opening and speaker opening to reduce acoustic coupling.
 4. Run `TEST_ALERT` at low software gain.
 5. Test battery supply only after the USB-powered prototype behaves correctly.
 6. Integrate the assembly into a removable, insulated compartment after bench tests pass.
+
+[TESTING.md](TESTING.md) expands each step into pass/fail checks, and carries the calibration procedure and the acceptance checklist.

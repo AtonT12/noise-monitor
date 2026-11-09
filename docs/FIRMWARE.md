@@ -19,7 +19,7 @@ ESP-IDF and is only exercised by a target build.
 | WAV parser | `include/wav_parser.h`, `src/wav_parser.cpp` | Platform-independent RIFF chunk parsing with overflow-safe bounds checks |
 | WAV player | `include/wav_player.h`, `src/wav_player.cpp` | LittleFS mount, WAV validation, chunked PCM playback |
 
-The code is written in C++17 for Arduino-ESP32 Core 3.x / ESP-IDF 5.x.
+The code is written in C++17 for Arduino-ESP32 Core 3.x / ESP-IDF 5.x. Wiring is in [HARDWARE.md](HARDWARE.md); bring-up, calibration and validation status are in [TESTING.md](TESTING.md).
 
 ## 2. I2S full-duplex audio bus
 
@@ -41,6 +41,8 @@ Both channels share standard-mode clock and frame timing:
 The TX channel is initialized directly with BOTH selected before it is enabled. The playback routine also writes an interleaved `[left, right]` pair containing the same sample in each slot. This code uses the ESP-IDF standard I2S driver, not Arduino `I2SClass::configureTX()`, so there is no later configuration call whose early-return behavior could leave the transmitter in mono/left mode.
 
 RX intentionally remains stereo/BOTH because `readMicrophoneFrames()` sizes buffers as two 32-bit words per frame and `NoiseMeter` reads the even-indexed left word. The INMP441's L/R strap determines which slot contains microphone data; it does not require changing the DMA layout to mono. If RX is changed to mono/LEFT, both the read-buffer sizing and sample extraction must be updated together.
+
+One consequence is worth knowing: the INMP441 tri-states its SD output outside its selected slot, so with RX reading both slots the right slot samples a floating line. `NoiseMeter` never reads it, so measurements are unaffected, but a 100 kΩ pull-down from DIN to GND removes the floating input and the associated noise pickup.
 
 The microphone is connected to DIN and strapped to its left slot. Its 24-bit signed payload is extracted from the 32-bit slot by shifting right eight bits. The microphone signal is not downmixed with the unused right slot.
 
@@ -128,21 +130,25 @@ Arduino-ESP32 `Preferences` stores small configuration values in the ESP32 NVS p
 
 The Serial command handler accepts one command per line. Invalid numeric values and invalid threshold ordering are rejected. Successful setting changes are written to NVS immediately.
 
+A `cal` value outside the ±20 dB offset range can only come from firmware that stored the absolute 0 dBFS reference, so `loadSettings()` subtracts the 120 dB reference before clamping. `calibration::normalizeStoredOffset()` implements the same rule and is covered by `tests/test_calibration.cpp`, but the firmware currently performs the conversion inline rather than calling it. See the known-issues list in the [README](../README.md#11-known-issues).
+
 For this MVP, hold duration, cooldown duration, and quiet-rearm duration remain compile-time constants in `include/config.h`.
 
 ## 8. LED status patterns
 
-The XIAO ESP32-S3 onboard user LED is active low. Version C uses the LED as a simple status indicator:
+The XIAO ESP32-S3 onboard user LED is active low. Version C uses the LED as a simple status indicator, driven from the main loop with `millis()` phases:
 
-| State | Pattern |
-|---|---|
-| `MONITORING` | Slow heartbeat |
-| `THRESHOLD_HOLD` | Rapid flash |
-| `PLAYING_ALERT` | Solid on |
-| `COOLDOWN` | Single periodic pulse |
-| `WAITING_FOR_QUIET` | Double pulse |
-| Low battery (overrides the state pattern) | Two short blinks every 3 s |
-| Fatal audio initialization error | Fast blink |
+| State | Pattern | Timing |
+|---|---|---|
+| `MONITORING` | Slow heartbeat | 70 ms on, 1930 ms off |
+| `THRESHOLD_HOLD` | Rapid flash | 80 ms on, 80 ms off |
+| `PLAYING_ALERT` | Solid on | Set once before blocking playback; not refreshed while audio runs |
+| `COOLDOWN` | Single periodic pulse | 100 ms on, 1100 ms off |
+| `WAITING_FOR_QUIET` | Double pulse | 70 ms on, 110 ms off, 70 ms on, 950 ms off |
+| Low battery (overrides the state pattern) | Two short blinks every 3 s | 60 ms on, 140 ms off, 60 ms on, 2740 ms off |
+| Fatal audio initialization error | Fast blink | 125 ms on, 125 ms off |
+
+The `PLAYING_ALERT` row deserves a caveat: playback is blocking, so the pattern is written once before `alert_sound::play()` is entered and never updated until it returns.
 
 ## 8a. Power and battery policy
 
@@ -170,6 +176,15 @@ three-note chime when the file is missing, unreadable, or not 16 kHz mono
 16-bit PCM. An empty filesystem therefore produces a working reminder instead
 of a silent device. `STATUS` prints `reminder=/alert.wav` or
 `reminder=built-in chime` so the active source is visible without listening.
+
+The fallback also covers a partial WAV failure: if playback starts and then a write error occurs, the chime plays immediately afterwards. A single alert can therefore produce a truncated WAV followed by a chime.
+
+`TEST_ALERT` routes through the same function, so a manual test produces the
+same source selection as an automatic alert. It also calls
+`AlertController::onPlaybackCompleted()`, which means a manual test starts the
+normal cooldown and suppresses automatic alerts for the cooldown period plus
+the quiet-rearm interval. This is intentional — a test session should not be
+interrupted by the device — but it is easy to mistake for a broken detector.
 
 ## 9. Deliberate MVP limitations
 
