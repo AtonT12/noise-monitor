@@ -21,9 +21,11 @@ void AlertController::configure(float triggerThresholdDb,
   if (resetThresholdDb_ >= triggerThresholdDb_) {
     resetThresholdDb_ = triggerThresholdDb_ - 1.0F;
   }
-  holdMs_ = std::clamp(holdMs, 250U, 60000U);
-  cooldownMs_ = std::clamp(cooldownMs, 1000U, 300000U);
-  quietRearmMs_ = std::clamp(quietRearmMs, 500U, 60000U);
+  // Explicit template argument: on the Xtensa target uint32_t is unsigned long,
+  // while the U literals are unsigned int, so deduction would fail there.
+  holdMs_ = std::clamp<uint32_t>(holdMs, 250U, 60000U);
+  cooldownMs_ = std::clamp<uint32_t>(cooldownMs, 1000U, 300000U);
+  quietRearmMs_ = std::clamp<uint32_t>(quietRearmMs, 500U, 60000U);
 }
 
 bool AlertController::setTriggerThreshold(float valueDb) {

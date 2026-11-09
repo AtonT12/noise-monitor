@@ -254,7 +254,7 @@ bash tools/run_host_tests.sh
 
 They cover the alert state machine (including `millis()` rollover), the RIFF/WAV parser (including hostile chunk sizes), and the calibration conversion. They do not cover I2S, LittleFS, the microphone, the amplifier or the speaker.
 
-**No target build has been performed yet.** PlatformIO and the ESP32 toolchain were not available in the packaging environment, so `pio run` has never been executed and no hardware has been connected. The firmware sources have only been syntax-checked against stub Arduino headers. A target build is the first real gate.
+**Target build:** `pio run` passes with `espressif32@8.0.0` (Arduino-ESP32 3.3.12, ESP-IDF 5.5.5, Xtensa GCC 14.2.0): RAM 8.3 %, flash 13.3 %. No hardware has been connected yet, so I2S, the microphone, the amplifier, the speaker and the battery divider remain unverified.
 
 See [docs/TESTING.md](docs/TESTING.md) for the bring-up sequence, the calibration procedure, the acceptance checklist and the exact list of behaviour that still needs bench confirmation.
 

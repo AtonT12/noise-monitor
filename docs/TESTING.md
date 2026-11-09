@@ -4,27 +4,27 @@ This document covers what has been verified, how to bring the prototype up, how 
 
 ## 1. Current validation status
 
-### Verified in the packaging environment
+### Verified
 
+- `pio run` — passed on 2026-11-09 with platform `espressif32@8.0.0` (Arduino-ESP32 3.3.12, ESP-IDF 5.5.5) and Xtensa GCC 14.2.0. `firmware.elf` and `firmware.bin` were produced; RAM 8.3 % (27,188 of 327,680 bytes) and flash 13.3 % (419,487 of 3,145,728 bytes).
 - `bash tools/run_host_tests.sh` — passed. Three standalone C++17 programs compile with `-Wall -Wextra -Werror -pedantic` and all assertions pass:
   - `test_alert_controller.cpp` — trigger equality, exact hold and cooldown boundaries, cancellation, quiet re-arm, repeated-noise suppression, and `millis()` rollover.
   - `test_wav_parser.cpp` — a valid PCM WAV containing an odd-sized unknown chunk, plus malformed `JUNK` and `fmt ` chunks declaring `0xFFFFFFF8` bytes.
   - `test_calibration.cpp` — legacy absolute-reference conversion, ±20 dB clamping, NaN/infinity fallback, and idempotence.
-- Syntax and type check of every translation unit (`main.cpp`, `noise_meter.cpp`, `battery_monitor.cpp`, `alert_sound.cpp`, `wav_player.cpp`, `wav_parser.cpp`, `alert_controller.cpp`, `calibration.cpp`) with `g++ -std=gnu++17 -Wall -Wextra -Wformat=2 -Wshadow -fsyntax-only`, against minimal stub Arduino, Preferences, LittleFS and esp_sleep headers.
 - `python -m py_compile tools/generate_test_tone.py` — passed.
 - `data/alert.wav` — confirmed PCM mono, 16 kHz, 16-bit, 18,400 frames (1.15 s).
 - Ad-hoc harnesses (not committed) exercised two hardware-facing modules:
   - `battery_monitor` — divider scaling (1050 mV at the pin → 2.100 V pack), every status boundary (2.49 / 2.50 / 3.29 / 3.30 / 3.49 / 3.50 V), and the state-of-charge curve (3.70 V → 35 %, 4.20 V → 100 %).
   - `alert_sound` — the chime renders 13,760 samples (0.86 s including the silence tail), peak 17 % of full scale at gain 0.25, mean 0.04 LSB (no DC offset), starts and ends at zero, and toggles the amplifier on and off exactly once per playback.
 
+The target build caught a defect the host build cannot see. On Xtensa, `uint32_t` is `unsigned long` while a `U`-suffixed literal is `unsigned int`, so `std::clamp` could not deduce a single template type in `alert_controller.cpp`. On x86-64 the host compiler defines `uint32_t` as `unsigned int`, so the same code compiled there. The call sites now pass the type explicitly: `std::clamp<uint32_t>(...)`.
+
 ### Not verified
 
-- **`pio run` has never been executed.** PlatformIO and the ESP32 toolchain were not installed in the packaging environment.
 - **No hardware has been connected.** No XIAO ESP32-S3, INMP441, MAX98357A, speaker, divider, or battery was available.
-- The stub headers used for the syntax check approximate the Arduino-ESP32 API. They verify names, types and control flow, not the real driver surface. A target build is the first real gate.
 - The three host suites cover pure logic only. They say nothing about I2S, LittleFS, the microphone, the amplifier or the speaker.
 
-Until the target build and the physical tests below are complete, this repository is a source project with host-tested logic, not a validated device.
+The target build now passes, but the device remains unvalidated until the physical tests below are complete.
 
 ## 2. Bring-up sequence
 
@@ -155,7 +155,7 @@ These tests do not exercise I2S, LittleFS hardware behaviour, the microphone, th
 
 ## 5. Acceptance checklist
 
-- [ ] Firmware compiles in PlatformIO (`pio run`).
+- [x] Firmware compiles in PlatformIO (`pio run`).
 - [ ] Firmware uploads to the XIAO ESP32-S3.
 - [ ] Serial telemetry appears consistently at 500 ms intervals.
 - [ ] Microphone levels respond to environmental sound.
